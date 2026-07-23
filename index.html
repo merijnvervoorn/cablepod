@@ -64,7 +64,7 @@
         }
 
         .nav-icon {
-            font-size: 1.3em; /* Scaled down */
+            font-size: 1.3em; 
             width: 26px;
             text-align: center;
             display: inline-flex;
@@ -86,6 +86,7 @@
             margin-bottom: var(--player-height);
             box-sizing: border-box;
             width: 100%;
+            transition: margin-bottom 0.3s ease;
         }
 
         .tab-view { display: none; }
@@ -135,7 +136,7 @@
         button:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .btn-icon {
-            font-size: 1.1em; /* Scaled down */
+            font-size: 1.1em; 
             display: inline-block;
             vertical-align: middle;
             margin-top: -2px;
@@ -179,6 +180,7 @@
             position: fixed; top: 0; left: var(--sidebar-width); right: 0; bottom: var(--player-height);
             background: var(--bg-color); z-index: 50;
             overflow-y: auto; display: none; flex-direction: column;
+            transition: bottom 0.3s ease;
         }
         .ep-header { padding: 20px 30px; display: flex; align-items: center; gap: 15px; border-bottom: 1px solid var(--border-color); position: sticky; top:0; background: var(--bg-color); z-index: 51;}
         .ep-header button { background: transparent; font-size: 16px; padding: 0; color: var(--text-color); }
@@ -197,6 +199,7 @@
             border-top: 1px solid var(--border-color);
             display: flex; align-items: center; padding: 0 30px; gap: 20px;
             z-index: 100;
+            transition: transform 0.3s ease;
         }
         #audio-player-bar .trigger-area { display: flex; align-items: center; gap: 15px; cursor: pointer; transition: opacity 0.2s; }
         #audio-player-bar .trigger-area:hover { opacity: 0.8; }
@@ -207,6 +210,11 @@
         .player-controls { flex-grow: 1; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 25px; }
         .player-buttons { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
         
+        /* Hidden Player State */
+        body.player-hidden #audio-player-bar { transform: translateY(100%); display: none; }
+        body.player-hidden #main-content { margin-bottom: 0 !important; }
+        body.player-hidden #episode-detail { bottom: 0 !important; }
+
         /* Icon Button styling */
         .icon-btn {
             background: transparent !important;
@@ -317,6 +325,14 @@
         .settings-box h3 { margin-top: 0; }
         .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 
+        /* Sync Feature Styles */
+        .sync-phrase-box { 
+            background: var(--bg-color); padding: 15px; border-radius: 8px; 
+            font-family: monospace; font-size: 16px; text-align: center; 
+            letter-spacing: 1px; color: var(--primary-color); border: 1px dashed var(--primary-color);
+            margin: 15px 0; word-break: break-all;
+        }
+
         @media (max-width: 768px) {
             #sidebar { display: none; } 
             #episode-detail, #audio-player-bar { left: 0; }
@@ -346,7 +362,7 @@
             <img src="/static/CablePod-logo.png" alt="CablePod Logo" style="width: 44px; height: 44px; object-fit: contain; border-radius: 8px;">
             <h2 style="color: var(--primary-color); margin: 0; font-size: 20px;">CablePod</h2>
         </div>
-        <div class="nav-item active" onclick="switchTab('home')"><span class="nav-icon">⌂</span> Home</div>
+        <div class="nav-item active" onclick="switchTab('home')"><span class="nav-icon">◉</span> Home</div>
         <div class="nav-item" onclick="switchTab('queue')"><span class="nav-icon">≡</span> Queue</div>
         <div class="nav-item" onclick="switchTab('inbox')">
             <span class="nav-icon">
@@ -394,20 +410,15 @@
         <div id="view-subscriptions" class="tab-view">
             <div class="header-flex">
                 <h2>Your Subscriptions</h2>
-                <button class="primary" onclick="switchTab('settings')"><span class="btn-icon">+</span> Add Podcast</button>
+                <button class="primary" onclick="switchTab('add-podcast')"><span class="btn-icon">+</span> Add Podcast</button>
             </div>
             <div id="subs-list" class="subs-grid"></div>
         </div>
 
-        <!-- DEDICATED SUBSCRIPTION DETAIL VIEW -->
-        <div id="view-sub-detail" class="tab-view">
-            <button onclick="closeSubDetail()" style="margin-bottom: 20px;" class="secondary"><span class="btn-icon">←</span> Back to Subscriptions</button>
-            <div id="sub-detail-content"></div>
-        </div>
-
-        <!-- SETTINGS TAB (Search, Import, Export, Theme) -->
-        <div id="view-settings" class="tab-view">
-            <h2>Settings & Add Podcasts</h2>
+        <!-- ADD PODCAST TAB -->
+        <div id="view-add-podcast" class="tab-view">
+            <button onclick="switchTab('subscriptions')" style="margin-bottom: 20px;" class="secondary"><span class="btn-icon">←</span> Back to Subscriptions</button>
+            <h2>Add Podcast</h2>
             
             <div class="settings-box">
                 <h3>Search Directory</h3>
@@ -421,6 +432,84 @@
                     <button class="primary" onclick="loadSubscriptionDetail(safeId(document.getElementById('rss-input').value))">Load Feed</button>
                 </div>
                 <div id="search-results" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+
+        <!-- DEDICATED SUBSCRIPTION DETAIL VIEW -->
+        <div id="view-sub-detail" class="tab-view">
+            <button onclick="closeSubDetail()" style="margin-bottom: 20px;" class="secondary"><span class="btn-icon">←</span> Back to Subscriptions</button>
+            <div id="sub-detail-content"></div>
+        </div>
+
+        <!-- SETTINGS TAB (Theme, Import, Export, Sync) -->
+        <div id="view-settings" class="tab-view">
+            <h2>Settings</h2>
+            
+            <div class="settings-box" style="border-color: var(--primary-color);">
+                <h3>CablePod Auto-Sync (E2EE)</h3>
+                <p style="font-size: 14px; color: var(--text-secondary);">Keep your queue, subscriptions, and playback progress synchronized across all your devices using a secure 8-word passphrase. Data is encrypted before leaving your device.</p>
+                
+                <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border-color);">
+                    <label style="font-size: 13px; color: var(--text-secondary); display: block; margin-bottom: 8px;">Storage Provider</label>
+                    <select id="sync-provider" onchange="updateProviderUI()" style="width: 100%; max-width: 400px; padding: 10px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 15px;">
+                        <option value="cloudflare">Default (Cloudflare Edge)</option>
+                        <option value="github">GitHub Gist</option>
+                        <option value="custom">Custom Server / WebDAV</option>
+                    </select>
+
+                    <!-- Cloudflare Settings -->
+                    <div id="provider-cloudflare" style="display: block; margin-bottom: 10px;">
+                        <p style="font-size: 12px; color: var(--text-secondary); margin-top: 0;">
+                            Free, zero-config relay. Data is heavily encrypted before sending. Cloudflare cannot read your data.
+                        </p>
+                    </div>
+
+                    <!-- GitHub Gist Settings -->
+                    <div id="provider-github" style="display: none; margin-bottom: 10px;">
+                        <p style="font-size: 12px; color: var(--text-secondary); margin-top: 0;">
+                            Syncs via a hidden Gist on your personal GitHub account. Requires a Personal Access Token (PAT).<br>
+                            • <b>Classic PAT:</b> Check the <code>gist</code> scope.<br>
+                            • <b>Fine-Grained PAT:</b> Account permissions &rarr; Gists: Read and Write.
+                        </p>
+                        <input type="text" id="gist-token" placeholder="GitHub Personal Access Token" onchange="saveProviderSettings()">
+                        <input type="text" id="gist-id" placeholder="Gist ID (Leave blank to auto-create)" onchange="saveProviderSettings()">
+                    </div>
+
+                    <!-- Custom Server Settings -->
+                    <div id="provider-custom" style="display: none; margin-bottom: 10px;">
+                        <p style="font-size: 12px; color: var(--text-secondary); margin-top: 0;">
+                            Send encrypted JSON payloads directly to your own REST or WebDAV endpoint. Data remains fully encrypted end-to-end.
+                        </p>
+                        <input type="text" id="custom-server-url" placeholder="https://your-server.com/sync/" onchange="saveProviderSettings()">
+                        <input type="text" id="custom-server-auth" placeholder="Authorization Header (Optional API Key)" onchange="saveProviderSettings()">
+                    </div>
+                </div>
+
+                <div id="sync-active-ui" style="display:none;">
+                    <p style="color: #4caf50; font-weight: bold; margin-bottom: 5px;"><span class="btn-icon">✓</span> Secure Sync Active</p>
+                    <p style="font-size: 13px; color: var(--text-secondary); margin-top: 0;">Use this passphrase on your other devices to connect them.</p>
+                    <div class="sync-phrase-box" id="display-sync-phrase"></div>
+                    <button class="secondary" onclick="disconnectSync()">Disconnect Device</button>
+                    <button class="secondary" onclick="forceSyncPull()">Force Pull Now</button>
+                </div>
+
+                <div id="sync-inactive-ui">
+                    <button class="primary" onclick="generateAndStartSync()" style="margin-bottom: 20px;">Generate New Sync Passphrase</button>
+                    <h4 style="margin-top:0;">Or link an existing device:</h4>
+                    <div style="display:flex;">
+                        <input type="text" id="sync-input" placeholder="e.g. apple brave tiger wind..." style="margin-bottom:0;">
+                        <button class="secondary" onclick="connectExistingSync()">Link Device</button>
+                    </div>
+                </div>
+                <p id="sync-status" style="font-size: 13px; color: var(--primary-color); margin-top: 15px;"></p>
+
+                <details style="font-size: 12px; color: var(--text-secondary); margin-top: 15px; cursor: pointer;">
+                    <summary style="outline: none; color: var(--primary-color);">🔒 How is my data secured?</summary>
+                    <p style="margin-top: 8px; line-height: 1.5;">
+                        CablePod uses <b>End-to-End Encryption (E2EE)</b>. Before your data leaves this device, it is encrypted using a 256-bit AES-GCM key derived directly from your 8-word passphrase. <br><br>
+                        Your passphrase is never sent over the internet. Instead, it is cryptographically hashed into a random identifier so the server knows where to save the file. Because of this, whether you use Cloudflare, GitHub, or a Custom Server, the host only sees an unreadable blob of data and can never access your podcasts.
+                    </p>
+                </details>
             </div>
 
             <div class="settings-box">
@@ -634,13 +723,20 @@
         };
         const safeId = (str) => btoa(encodeURIComponent(str)).replace(/=/g, '');
 
-        // --- State Management ---
+        // --- State Management & Sync ---
         let subscriptions = JSON.parse(localStorage.getItem('subscriptions')) || [];
         let queue = JSON.parse(localStorage.getItem('queue')) || [];
         let playedHistory = JSON.parse(localStorage.getItem('playedHistory')) || []; 
         let episodeProgress = JSON.parse(localStorage.getItem('episodeProgress')) || {}; 
         let currentEpisode = JSON.parse(localStorage.getItem('currentEpisode')) || null;
         let lightTheme = localStorage.getItem('lightTheme') === 'true';
+
+        // Secure passhrase loading
+        let syncPassphrase = localStorage.getItem('syncPassphrase');
+        if (syncPassphrase === "null" || syncPassphrase === "undefined") syncPassphrase = null;
+
+        let syncTimeout = null;
+        let SYNC_SERVER_URL = "https://cablepod-sync.merijnvervoorn.workers.dev/";
 
         // Global memory caches to safely pass data to UI
         window.epCache = {};
@@ -649,11 +745,16 @@
 
         if (lightTheme) document.body.classList.add('light-theme');
 
-        function saveState() {
+        function saveState(pushToCloud = true) {
             localStorage.setItem('subscriptions', JSON.stringify(subscriptions));
             localStorage.setItem('queue', JSON.stringify(queue));
             localStorage.setItem('playedHistory', JSON.stringify(playedHistory));
             localStorage.setItem('episodeProgress', JSON.stringify(episodeProgress));
+            
+            if (pushToCloud && syncPassphrase) {
+                clearTimeout(syncTimeout);
+                syncTimeout = setTimeout(pushSyncData, 2000); // Debounce to prevent network spam
+            }
         }
 
         function toggleTheme() {
@@ -662,7 +763,238 @@
             document.body.classList.toggle('light-theme', lightTheme);
         }
 
-        // --- Navigation (No more kicking out of the app) ---
+        // --- Cryptography for E2EE Sync ---
+        async function getCryptoKey(passphrase) {
+            const enc = new TextEncoder();
+            const keyMaterial = await crypto.subtle.importKey(
+                "raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]
+            );
+            return crypto.subtle.deriveKey(
+                { name: "PBKDF2", salt: enc.encode("cablepod-salt-2024"), iterations: 100000, hash: "SHA-256" },
+                keyMaterial,
+                { name: "AES-GCM", length: 256 },
+                false,
+                ["encrypt", "decrypt"]
+            );
+        }
+
+        async function getHash(passphrase) {
+            const enc = new TextEncoder();
+            const hashBuffer = await crypto.subtle.digest('SHA-256', enc.encode(passphrase + "-url-salt"));
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+        }
+
+        async function encryptPayload(dataObj, passphrase) {
+            const key = await getCryptoKey(passphrase);
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const encoded = new TextEncoder().encode(JSON.stringify(dataObj));
+            const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoded);
+            return JSON.stringify({
+                iv: Array.from(iv),
+                data: Array.from(new Uint8Array(encrypted))
+            });
+        }
+
+        async function decryptPayload(encryptedJson, passphrase) {
+            const parsed = typeof encryptedJson === 'string' ? JSON.parse(encryptedJson) : encryptedJson;
+            const key = await getCryptoKey(passphrase);
+            const decrypted = await crypto.subtle.decrypt(
+                { name: "AES-GCM", iv: new Uint8Array(parsed.iv) },
+                key,
+                new Uint8Array(parsed.data)
+            );
+            return JSON.parse(new TextDecoder().decode(decrypted));
+        }
+
+        // --- Sync Implementation & Providers ---
+        const wordList = ["apple","brave","cloud","dream","eagle","frost","globe","heart","image","juice","knight","lemon","mango","night","ocean","piano","quest","river","stone","tiger","unity","voice","water","xenon","youth","zebra","alien","beach","cabin","dance","earth","flame","giant","happy","igloo","jelly","karma","lunar","magic","ninja","oasis","pearl","quirk","radar","smile","train","ultra","venus","whale","yacht","amber","brick","chalk","delta","epoch","flock","grand","hazel","input","jumbo"];
+        
+        function updateProviderUI() {
+            const provider = document.getElementById('sync-provider').value;
+            document.getElementById('provider-cloudflare').style.display = provider === 'cloudflare' ? 'block' : 'none';
+            document.getElementById('provider-github').style.display = provider === 'github' ? 'block' : 'none';
+            document.getElementById('provider-custom').style.display = provider === 'custom' ? 'block' : 'none';
+            localStorage.setItem('syncProvider', provider);
+        }
+
+        function saveProviderSettings() {
+            localStorage.setItem('gistToken', document.getElementById('gist-token').value.trim());
+            localStorage.setItem('gistId', document.getElementById('gist-id').value.trim());
+            localStorage.setItem('customServerUrl', document.getElementById('custom-server-url').value.trim());
+            localStorage.setItem('customServerAuth', document.getElementById('custom-server-auth').value.trim());
+        }
+
+        function loadProviderSettings() {
+            document.getElementById('sync-provider').value = localStorage.getItem('syncProvider') || 'cloudflare';
+            document.getElementById('gist-token').value = localStorage.getItem('gistToken') || '';
+            document.getElementById('gist-id').value = localStorage.getItem('gistId') || '';
+            document.getElementById('custom-server-url').value = localStorage.getItem('customServerUrl') || '';
+            document.getElementById('custom-server-auth').value = localStorage.getItem('customServerAuth') || '';
+            updateProviderUI();
+        }
+
+        function updateSyncUI() {
+            try { loadProviderSettings(); } catch(e) {}
+            
+            if (syncPassphrase && syncPassphrase !== "null" && syncPassphrase !== "undefined") {
+                document.getElementById('sync-inactive-ui').style.display = 'none';
+                document.getElementById('sync-active-ui').style.display = 'block';
+                document.getElementById('display-sync-phrase').innerText = syncPassphrase;
+            } else {
+                document.getElementById('sync-inactive-ui').style.display = 'block';
+                document.getElementById('sync-active-ui').style.display = 'none';
+                document.getElementById('sync-status').innerText = '';
+            }
+        }
+
+        function generateAndStartSync() {
+            let phrase = [];
+            for(let i=0; i<8; i++) phrase.push(wordList[Math.floor(Math.random() * wordList.length)]);
+            syncPassphrase = phrase.join("-");
+            localStorage.setItem('syncPassphrase', syncPassphrase);
+            updateSyncUI();
+            pushSyncData();
+            document.getElementById('sync-status').innerText = "New passphrase generated. Encrypting and pushing data...";
+        }
+
+        function disconnectSync() {
+            syncPassphrase = null;
+            localStorage.removeItem('syncPassphrase');
+            updateSyncUI();
+        }
+
+        function connectExistingSync() {
+            const input = document.getElementById('sync-input').value.trim().toLowerCase().replace(/\s+/g, '-');
+            if(input.split("-").length < 4) {
+                document.getElementById('sync-status').innerText = "Invalid passphrase format.";
+                return;
+            }
+            syncPassphrase = input;
+            localStorage.setItem('syncPassphrase', syncPassphrase);
+            updateSyncUI();
+            document.getElementById('sync-status').innerText = "Connecting and decrypting...";
+            pullSyncData();
+        }
+
+        function forceSyncPull() {
+            document.getElementById('sync-status').innerText = "Pulling latest data...";
+            pullSyncData();
+        }
+
+        // --- Network Layer ---
+        async function pushSyncData() {
+            if (!syncPassphrase || syncPassphrase === "null") return;
+            const payload = { timestamp: Date.now(), subscriptions, queue, playedHistory, episodeProgress };
+            
+            try {
+                const encryptedData = await encryptPayload(payload, syncPassphrase);
+                const syncId = await getHash(syncPassphrase);
+                const provider = localStorage.getItem('syncProvider') || 'cloudflare';
+
+                if (provider === 'github') {
+                    const token = localStorage.getItem('gistToken');
+                    let gistId = localStorage.getItem('gistId');
+                    
+                    if (!token) throw new Error("GitHub Token required");
+                    
+                    const headers = { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github.v3+json' };
+                    const body = JSON.stringify({ description: "CablePod Sync", files: { "cablepod-sync.json": { content: encryptedData } }});
+                    
+                    if (!gistId) {
+                        // Create new Gist
+                        const res = await fetch("https://api.github.com/gists", { method: 'POST', headers, body: JSON.stringify({ public: false, ...JSON.parse(body) }) });
+                        const data = await res.json();
+                        gistId = data.id;
+                        document.getElementById('gist-id').value = gistId;
+                        saveProviderSettings();
+                    } else {
+                        // Update existing Gist
+                        await fetch(`https://api.github.com/gists/${gistId}`, { method: 'PATCH', headers, body });
+                    }
+
+                } else if (provider === 'custom') {
+                    const url = localStorage.getItem('customServerUrl');
+                    const auth = localStorage.getItem('customServerAuth');
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (auth) headers['Authorization'] = auth;
+                    
+                    await fetch(url.endsWith('/') ? url + syncId : url + '/' + syncId, { method: 'POST', headers, body: encryptedData });
+                } else {
+                    // Cloudflare Default
+                    await fetch(SYNC_SERVER_URL + syncId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: encryptedData });
+                }
+                
+                document.getElementById('sync-status').innerText = `✓ Synced securely via ${provider}`;
+            } catch(e) { 
+                console.error(e);
+                document.getElementById('sync-status').innerText = "Sync failed. Check your provider settings.";
+            }
+        }
+
+        async function pullSyncData() {
+            if (!syncPassphrase || syncPassphrase === "null") return;
+            try {
+                const syncId = await getHash(syncPassphrase);
+                const provider = localStorage.getItem('syncProvider') || 'cloudflare';
+                let encryptedText = "";
+
+                if (provider === 'github') {
+                    const token = localStorage.getItem('gistToken');
+                    const gistId = localStorage.getItem('gistId');
+                    if (!token || !gistId) throw new Error("GitHub credentials missing");
+                    
+                    const res = await fetch(`https://api.github.com/gists/${gistId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                    const data = await res.json();
+                    encryptedText = data.files["cablepod-sync.json"].content;
+                } else if (provider === 'custom') {
+                    const url = localStorage.getItem('customServerUrl');
+                    const auth = localStorage.getItem('customServerAuth');
+                    const headers = {};
+                    if (auth) headers['Authorization'] = auth;
+                    
+                    const res = await fetch(url.endsWith('/') ? url + syncId : url + '/' + syncId, { headers });
+                    if (!res.ok) throw new Error("Not found");
+                    encryptedText = await res.text();
+                } else {
+                    // Cloudflare Default
+                    const res = await fetch(SYNC_SERVER_URL + syncId);
+                    if (!res.ok) throw new Error("Not found");
+                    encryptedText = await res.text();
+                }
+                
+                const data = await decryptPayload(encryptedText, syncPassphrase);
+                const localTimestamp = parseInt(localStorage.getItem('lastSyncTimestamp') || '0');
+                
+                if (data.timestamp > localTimestamp) {
+                    subscriptions = data.subscriptions || [];
+                    queue = data.queue || [];
+                    playedHistory = data.playedHistory || [];
+                    episodeProgress = data.episodeProgress || {};
+                    
+                    localStorage.setItem('lastSyncTimestamp', data.timestamp);
+                    saveState(false); 
+                    
+                    document.getElementById('sync-status').innerText = `✓ Sync successful via ${provider}. Data updated.`;
+                    renderSubscriptions(); renderQueue(); fetchInboxData(); updatePlayerVisibility();
+                } else {
+                    document.getElementById('sync-status').innerText = "✓ Already up to date.";
+                }
+            } catch(e) { 
+                console.error(e);
+                document.getElementById('sync-status').innerText = "Could not pull data. Check provider settings.";
+            }
+        }
+
+        // --- Navigation & UI Visibility ---
+        function updatePlayerVisibility() {
+            if (!currentEpisode && queue.length === 0) {
+                document.body.classList.add('player-hidden');
+            } else {
+                document.body.classList.remove('player-hidden');
+            }
+        }
+
         window.addEventListener('popstate', (e) => {
             document.getElementById('episode-detail').style.display = 'none';
             document.getElementById('fullscreen-player').style.display = 'none';
@@ -683,10 +1015,11 @@
             document.getElementById('view-' + tab).classList.add('active');
             
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            const sidebarItems = { home: 0, queue: 1, inbox: 2, subscriptions: 3, settings: 5 };
+            // Map the add-podcast view to keep the subscriptions nav item active
+            const sidebarItems = { home: 0, queue: 1, inbox: 2, subscriptions: 3, settings: 4, 'add-podcast': 3 };
             if (sidebarItems[tab] !== undefined) document.querySelectorAll('.nav-item')[sidebarItems[tab]].classList.add('active');
 
-            const titles = { home: 'Home', queue: 'Queue', inbox: 'Inbox', subscriptions: 'Subscriptions', settings: 'Settings & Add' };
+            const titles = { home: 'Home', queue: 'Queue', inbox: 'Inbox', subscriptions: 'Subscriptions', settings: 'Settings', 'add-podcast': 'Add Podcast' };
             if(titles[tab] && document.getElementById('header-title')) document.getElementById('header-title').innerText = titles[tab];
 
             if (pushHistory) history.pushState({ view: tab }, '', '#' + tab);
@@ -695,6 +1028,7 @@
             if(tab === 'subscriptions') renderSubscriptions();
             if(tab === 'queue') renderQueue();
             if(tab === 'inbox') renderInbox();
+            if(tab === 'settings') updateSyncUI();
         }
 
         function closeEpisodeDetail() {
@@ -765,10 +1099,26 @@
             return `${m}:${s.toString().padStart(2, '0')}`;
         }
 
-        // Info Panel toggle
         btnFsInfo.onclick = () => {
             document.getElementById('fs-notes-panel').classList.add('active');
         };
+
+        function togglePlayEpisode(epId) {
+            if (currentEpisode && currentEpisode.id === epId) {
+                if (audioPlayer.paused) audioPlayer.play();
+                else audioPlayer.pause();
+            } else {
+                playAudio(epId);
+            }
+        }
+
+        function updateCardPlayButtons() {
+            document.querySelectorAll('.play-btn-card').forEach(btn => {
+                const epId = btn.getAttribute('data-epid');
+                const isPlaying = currentEpisode && currentEpisode.id === epId && !audioPlayer.paused;
+                btn.innerHTML = `<span class="btn-icon">${isPlaying ? '⏸' : '▶'}</span> ${isPlaying ? 'Pause' : 'Play'}`;
+            });
+        }
 
         // Playback Events (Bind to both sets of buttons)
         const togglePlay = () => {
@@ -782,10 +1132,12 @@
         audioPlayer.addEventListener('play', () => { 
             btnPlay.innerHTML = pauseSVG; 
             fsBtnPlay.innerHTML = pauseSVG;
+            updateCardPlayButtons();
         });
         audioPlayer.addEventListener('pause', () => { 
             btnPlay.innerHTML = playSVG; 
             fsBtnPlay.innerHTML = playSVG;
+            updateCardPlayButtons();
         });
 
         const rewindAudio = () => { if(currentEpisode) audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - 10); };
@@ -793,7 +1145,6 @@
         
         btnRewind.onclick = rewindAudio;
         fsBtnRewind.onclick = rewindAudio;
-        
         btnForward.onclick = forwardAudio;
         fsBtnForward.onclick = forwardAudio;
         
@@ -823,6 +1174,12 @@
                 seekBar.value = 0; fsSeekBar.value = 0;
                 timeCurrent.innerText = "0:00"; fsTimeCurrent.innerText = "0:00";
                 timeTotal.innerText = "0:00"; fsTimeTotal.innerText = "0:00";
+                
+                if (document.getElementById('fullscreen-player').style.display === 'flex') {
+                    closeFullscreen();
+                }
+                updatePlayerVisibility();
+                updateCardPlayButtons();
             }
         }
         btnNext.onclick = playNextEpisode;
@@ -935,9 +1292,18 @@
 
             if (!queue.find(q => q.id === ep.id)) {
                 queue.unshift(ep);
+                
+                // Remove from inbox visually as soon as it's started
+                inboxEpisodes = inboxEpisodes.filter(q => q.id !== ep.id);
+                
                 saveState();
                 renderQueue();
+                renderInbox(); 
+                renderHome();
+            } else {
+                updateCardPlayButtons(); // Sync UI if played from queue
             }
+            updatePlayerVisibility();
         }
 
         function updatePlayerUI(ep) {
@@ -1081,9 +1447,17 @@
                                         pubDate: item.pubDate, 
                                         description: item.content || item.description || ""
                                     };
+                                    
                                     if(!playedHistory.includes(ep.id)) {
-                                        inboxEpisodes.push(ep);
                                         window.epCache[ep.id] = ep;
+                                        
+                                        const isQueued = queue.some(q => q.id === ep.id);
+                                        const isStarted = episodeProgress[ep.id] && episodeProgress[ep.id].currentTime > 1;
+                                        
+                                        // Do not show in inbox if it's already in the queue or has been started
+                                        if(!isQueued && !isStarted) {
+                                            inboxEpisodes.push(ep);
+                                        }
                                     }
                                 }
                             });
@@ -1161,12 +1535,13 @@
             const container = document.getElementById('queue-list');
             if (queue.length === 0) {
                 container.innerHTML = "<p>Your queue is empty.</p>";
-                return;
+            } else {
+                container.innerHTML = queue.map((ep, index) => {
+                    window.epCache[ep.id] = ep; 
+                    return createEpisodeCardHTML(ep.id, index, 'queue');
+                }).join("");
             }
-            container.innerHTML = queue.map((ep, index) => {
-                window.epCache[ep.id] = ep; 
-                return createEpisodeCardHTML(ep.id, index, 'queue');
-            }).join("");
+            updatePlayerVisibility();
         }
 
         // --- Shared Card Generation ---
@@ -1175,7 +1550,13 @@
             if(!ep) return "";
 
             const dateStr = ep.pubDate ? new Date(ep.pubDate).toLocaleDateString() : '';
-            let buttons = `<button class="primary" onclick="event.stopPropagation(); playAudio('${ep.id}')"><span class="btn-icon">▶</span> Play</button>`;
+            
+            // Check if currently playing to show correct icon
+            const isPlaying = currentEpisode && currentEpisode.id === epId && !audioPlayer.paused;
+            const playText = isPlaying ? 'Pause' : 'Play';
+            const playIcon = isPlaying ? '⏸' : '▶';
+
+            let buttons = `<button class="primary play-btn-card" data-epid="${ep.id}" onclick="event.stopPropagation(); togglePlayEpisode('${ep.id}')"><span class="btn-icon">${playIcon}</span> ${playText}</button>`;
             
             if (context === 'queue') {
                 buttons += `<button class="secondary" onclick="event.stopPropagation(); removeFromQueue(${index})"><span class="btn-icon">✕</span> Remove</button>`;
@@ -1185,7 +1566,7 @@
             buttons += `<button class="secondary" onclick="event.stopPropagation(); markAsPlayedCard('${ep.id}', this)"><span class="btn-icon">✓</span> Played</button>`;
 
             let progressHTML = '';
-            if (episodeProgress[ep.id]) { // Fixed bug here: using ep.id instead of ep.audioUrl
+            if (episodeProgress[ep.id]) { 
                 const pct = (episodeProgress[ep.id].currentTime / episodeProgress[ep.id].duration) * 100;
                 if (pct > 0 && pct < 100) {
                     progressHTML = `<div class="progress-bg"><div class="progress-fill" style="width: ${pct}%"></div></div>`;
@@ -1210,9 +1591,16 @@
             if (!ep) return;
             if (!queue.find(q => q.id === epId)) {
                 queue.push(ep);
+                
+                // Instantly remove from inbox visually
+                inboxEpisodes = inboxEpisodes.filter(q => q.id !== epId); 
+                
                 saveState();
                 if(btnElement) { btnElement.innerText = "✓ Added"; btnElement.disabled = true; }
-                renderQueue(); renderHome();
+                
+                renderQueue(); 
+                renderInbox(); 
+                renderHome();
             }
         }
 
@@ -1220,6 +1608,7 @@
             queue.splice(index, 1);
             saveState();
             renderQueue(); renderHome();
+            updatePlayerVisibility();
         }
 
         function markAsPlayedCard(epId, btnElement) {
@@ -1235,6 +1624,7 @@
                     btnElement.closest('.card').style.opacity = "0.5";
                 }
                 renderQueue(); renderInbox(); renderHome();
+                updatePlayerVisibility();
             }
         }
 
@@ -1257,7 +1647,13 @@
             document.getElementById('ep-detail-img').src = ep.image;
             document.getElementById('ep-detail-desc').innerHTML = ep.description;
 
-            document.getElementById('ep-btn-stream').onclick = () => playAudio(epId);
+            const streamBtn = document.getElementById('ep-btn-stream');
+            const isPlaying = currentEpisode && currentEpisode.id === epId && !audioPlayer.paused;
+            streamBtn.innerHTML = `<span class="btn-icon">${isPlaying ? '⏸' : '▶'}</span> ${isPlaying ? 'Pause' : 'Play'}`;
+            streamBtn.onclick = () => togglePlayEpisode(epId);
+            streamBtn.setAttribute('data-epid', epId);
+            streamBtn.classList.add('play-btn-card');
+            
             document.getElementById('ep-btn-queue').onclick = () => addToQueue(epId);
             
             const playedBtn = document.getElementById('ep-btn-played');
@@ -1307,7 +1703,6 @@
 
             let cachedPod = window.podCache[podId] || subscriptions.find(s => s.id === podId);
             if(!cachedPod && document.getElementById('rss-input').value) {
-                // Allows arbitrary RSS input that wasn't cached yet
                 cachedPod = { id: safeId(document.getElementById('rss-input').value), feedUrl: document.getElementById('rss-input').value, title: "Preview", image: "" };
             }
             if(!cachedPod) return;
@@ -1343,7 +1738,7 @@
                     if(!item.enclosure || !item.enclosure.link) return;
                     const ep = { 
                         id: safeId(item.enclosure.link),
-                        podcastId: podId, // Store origin ID
+                        podcastId: podId, 
                         podcastTitle: title, 
                         epTitle: cleanText(item.title), 
                         audioUrl: item.enclosure.link, 
@@ -1375,14 +1770,13 @@
 
         // Initialize App
         window.onload = () => {
-            // Sanitize existing broken titles and assign missing IDs in local storage
             if (subscriptions.length > 0) {
                 subscriptions = subscriptions.map(sub => ({
                     ...sub,
                     id: sub.id || safeId(sub.feedUrl),
                     title: cleanText(sub.title)
                 }));
-                saveState(); 
+                saveState(false); 
             }
 
             if(currentEpisode) {
@@ -1401,14 +1795,28 @@
                 }, {once:true});
             }
             
-            history.replaceState({ view: 'home' }, '', '#home');
+            // Render the initial UI properly
+            updateSyncUI(); 
             
-            // Force the home tab to render its content on initial load
-            switchTab('home', false); 
+            // Respect the tab the user was actually on when they refreshed
+            let initialTab = window.location.hash.replace('#', '') || 'home';
+            if (!['home', 'queue', 'inbox', 'subscriptions', 'settings'].includes(initialTab)) {
+                initialTab = 'home';
+            }
+            
+            history.replaceState({ view: initialTab }, '', '#' + initialTab);
+            switchTab(initialTab, false); 
 
             renderSubscriptions();
             renderQueue();
-            fetchInboxData(); 
+            updatePlayerVisibility();
+            
+            // Check for initial sync
+            if (syncPassphrase && syncPassphrase !== "null") {
+                pullSyncData().then(() => fetchInboxData());
+            } else {
+                fetchInboxData();
+            }
         };
     </script>
 </body>
