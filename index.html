@@ -1586,25 +1586,24 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             currentEpisode = ep;
             localStorage.setItem('currentEpisode', JSON.stringify(currentEpisode));
 
+            // 1. Set the source and speed
             audioPlayer.src = ep.audioUrl;
             audioPlayer.playbackRate = currentSpeed; 
             
-            // Build the lock screen UI now that the source is set
+            // 2. Build the lock screen UI (now using the absolute image URL we added)
             updatePlayerUI(ep);
             
             const savedProgress = episodeProgress[ep.id]?.currentTime || ep.progress || 0;
             
-            // Set the time BEFORE telling the browser to play
-            if (savedProgress > 0) {
-                audioPlayer.currentTime = savedProgress;
-            }
-            
-            audioPlayer.play().catch(e => console.error("Playback prevented:", e));
+            // 3. Play first. Once it successfully starts, THEN jump to the saved time.
+            audioPlayer.play().then(() => {
+                if (savedProgress > 0) {
+                    audioPlayer.currentTime = savedProgress;
+                }
+            }).catch(e => console.error("Playback prevented:", e));
 
             if (!queue.find(q => q.id === ep.id)) {
                 queue.unshift(ep);
-                
-                // Remove from inbox visually as soon as it's started
                 inboxEpisodes = inboxEpisodes.filter(q => q.id !== ep.id);
                 
                 saveState();
@@ -1612,11 +1611,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                 renderInbox(); 
                 renderHome();
             } else {
-                updateCardPlayButtons(); // Sync UI if played from queue
+                updateCardPlayButtons(); 
             }
             updatePlayerVisibility();
         }
-
+        
         function updatePlayerUI(ep) {
             // Update Bottom Bar
             document.getElementById('player-title').innerText = ep.epTitle;
