@@ -445,7 +445,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                 grid-area: actions;
                 margin-top: 6px !important;
                 display: flex !important;
-                flex-wrap: nowrap !important;
+                flex-wrap: wrap !important;
                 gap: 8px !important;
             }
             .card-actions button {
@@ -1952,22 +1952,24 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                 dateStr = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
             }
             
-            // Add duration to the metadata line if we have it
+            // Metadata line (Date, Podcast, Duration)
             let metaText = `<span style="font-size: 1.1em; vertical-align: middle; margin-right: 4px;">📻</span> ${dateStr} • ${ep.podcastTitle}`;
             if (ep.durationStr) {
                 metaText += ` • ⏱ ${ep.durationStr}`;
             }
             
-            // Check if currently playing to show correct icon
+            // Play / Pause toggle
             const isPlaying = currentEpisode && currentEpisode.id === epId && !audioPlayer.paused;
             const playText = isPlaying ? 'Pause' : 'Play';
             const playIcon = isPlaying ? '⏸' : '▶';
 
             let buttons = `<button class="primary play-btn-card" data-epid="${ep.id}" onclick="event.stopPropagation(); togglePlayEpisode('${ep.id}')"><span class="btn-icon">${playIcon}</span> ${playText}</button>`;
             
+            // Queue vs Non-Queue Actions
             if (context === 'queue') {
                 buttons += `<button class="secondary" onclick="event.stopPropagation(); removeFromQueue(${index})"><span class="btn-icon">✕</span> Remove</button>`;
                 
+                // Offline Cache Button (Queue only)
                 if (window.cachedAudioUrls && window.cachedAudioUrls.has(ep.audioUrl)) {
                     buttons += `<button class="secondary" disabled><span class="btn-icon">✓</span> Cached</button>`;
                 } else {
@@ -1977,7 +1979,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                 buttons += `<button class="secondary" onclick="event.stopPropagation(); addToQueue('${ep.id}', this)"><span class="btn-icon">+</span> Queue</button>`;
             }
 
-            // Only show progress text and bar IF the episode has actually been started
+            // MARK AS PLAYED (Restored on all cards)
+            buttons += `<button class="secondary" onclick="event.stopPropagation(); markAsPlayedCard('${ep.id}', this)"><span class="btn-icon">✓</span> Played</button>`;
+
+            // Progress text & fill (Only rendered if playback started)
             let progressHTML = '';
             const current = episodeProgress[ep.id] ? episodeProgress[ep.id].currentTime : 0;
             const total = (episodeProgress[ep.id] && episodeProgress[ep.id].duration) ? episodeProgress[ep.id].duration : 0;
