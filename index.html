@@ -1615,7 +1615,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             }
             updatePlayerVisibility();
         }
-        
+
         function updatePlayerUI(ep) {
             // Update Bottom Bar
             document.getElementById('player-title').innerText = ep.epTitle;
@@ -1654,12 +1654,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             // Show notes setup
             document.getElementById('fs-notes-content').innerHTML = ep.description || "No show notes available for this episode.";
 
-            // Send data to the mobile lock screen
+            // NEW: Send data to the mobile lock screen
             if ('mediaSession' in navigator) {
                 let safeImage = ep.image;
-                if (!safeImage || safeImage.startsWith('data:image') || safeImage.startsWith('/')) {
-                    // Force an ABSOLUTE URL so the Android OS can actually download it
-                    safeImage = window.location.origin + '/static/CablePod-logo.png';
+                
+                // If it's an SVG, base64, or missing, fallback to your absolute domain URL
+                if (!safeImage || safeImage.startsWith('data:image') || safeImage.endsWith('.svg')) {
+                    safeImage = 'https://cablepod.merijn.cc/static/CablePod-logo.png';
                 }
 
                 navigator.mediaSession.metadata = new MediaMetadata({
