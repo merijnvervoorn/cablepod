@@ -1585,10 +1585,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
 
             currentEpisode = ep;
             localStorage.setItem('currentEpisode', JSON.stringify(currentEpisode));
-            updatePlayerUI(ep);
 
             audioPlayer.src = ep.audioUrl;
             audioPlayer.playbackRate = currentSpeed; 
+            updatePlayerUI(ep);
             
             const savedProgress = episodeProgress[ep.id]?.currentTime || ep.progress || 0;
             
@@ -1650,15 +1650,23 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             // Show notes setup
             document.getElementById('fs-notes-content').innerHTML = ep.description || "No show notes available for this episode.";
 
-            // NEW: Send data to the mobile lock screen
+            // NEW: Send data to the mobile lock screen (with Android safe-guards)
             if ('mediaSession' in navigator) {
+                // Check if the image is a base64 SVG fallback. 
+                // Android lock screens will crash/hide if given an SVG.
+                let safeImage = ep.image;
+                if (!safeImage || safeImage.startsWith('data:image')) {
+                    safeImage = '/static/CablePod-logo.png'; // Use your standard app icon
+                }
+
                 navigator.mediaSession.metadata = new MediaMetadata({
                     title: ep.epTitle,
                     artist: ep.podcastTitle,
                     album: 'CablePod',
                     artwork: [
-                        { src: ep.image, sizes: '512x512', type: 'image/jpeg' },
-                        { src: ep.image, sizes: '256x256', type: 'image/jpeg' }
+                        { src: safeImage, sizes: '512x512', type: 'image/png' },
+                        { src: safeImage, sizes: '192x192', type: 'image/png' },
+                        { src: safeImage, sizes: '96x96', type: 'image/png' }
                     ]
                 });
             }
