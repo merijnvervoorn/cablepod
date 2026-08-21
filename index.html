@@ -1736,44 +1736,54 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
         }
 
         
-        // --- Hybrid Fetcher: Tries Raw XML for Duration, Falls back to rss2json ---
+        // --- Hybrid Fetcher: Cloudflare Worker -> Fallback to rss2json ---
         async function fetchPodcastFeed(feedUrl) {
             const freshUrl = feedUrl + (feedUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
             
             try {
-                // ATTEMPT 1: Raw XML via a reliable proxy to get durations
-                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(freshUrl)}`;
+                // ATTEMPT 1: Your custom Cloudflare Worker Proxy
+                // Uses the SYNC_SERVER_URL you already defined at the top of the file
+                const proxyUrl = SYNC_SERVER_URL + "?rss=" + encodeURIComponent(freshUrl);
                 const res = await fetch(proxyUrl);
-                if (!res.ok) throw new Error("Proxy failed");
+                
+                if (!res.ok) throw new Error("Worker proxy failed");
                 
                 const text = await res.text();
                 const xml = new DOMParser().parseFromString(text, "text/xml");
                 if (xml.querySelector("parsererror")) throw new Error("XML Parse Error");
 
                 const channel = xml.querySelector("channel");
-                let feedImage = channel.querySelector("image > url")?.textContent || channel.getElementsByTagNameNS("*", "image")[0]?.getAttribute("href") || "";
+                if (!channel) throw new Error("Invalid RSS format");
+
+                let feedImage = channel.querySelector("image > url")?.textContent || channel.getElementsByTagName("itunes:image")[0]?.getAttribute("href") || "";
 
                 const items = Array.from(xml.querySelectorAll("item")).map(item => {
                     const enclosure = item.querySelector("enclosure");
-                    const durationTag = item.getElementsByTagNameNS("*", "duration")[0];
-                    let durationStr = durationTag ? durationTag.textContent : "";
                     
-                    if (durationStr && !durationStr.includes(':')) {
-                        const secs = parseInt(durationStr, 10);
-                        if (!isNaN(secs)) {
-                            const h = Math.floor(secs / 3600);
-                            const m = Math.floor((secs % 3600) / 60);
-                            const s = Math.floor(secs % 60);
-                            durationStr = h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}` : `${m}:${s.toString().padStart(2, '0')}`;
+                    // Safely extract the duration tag
+                    let durationStr = "";
+                    const durationTag = item.getElementsByTagName("itunes:duration")[0];
+                    if (durationTag) {
+                        durationStr = durationTag.textContent;
+                        // Format raw seconds into MM:SS
+                        if (durationStr && !durationStr.includes(':')) {
+                            const secs = parseInt(durationStr, 10);
+                            if (!isNaN(secs)) {
+                                const h = Math.floor(secs / 3600);
+                                const m = Math.floor((secs % 3600) / 60);
+                                const s = Math.floor(secs % 60);
+                                durationStr = h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}` : `${m}:${s.toString().padStart(2, '0')}`;
+                            }
                         }
                     }
 
-                    const descTag = item.getElementsByTagNameNS("*", "encoded")[0] || item.querySelector("description");
+                    const contentTag = item.getElementsByTagName("content:encoded")[0];
+                    const descTag = item.querySelector("description");
 
                     return {
                         title: item.querySelector("title")?.textContent || "Unknown Episode",
                         pubDate: item.querySelector("pubDate")?.textContent || "",
-                        description: descTag ? descTag.textContent : "",
+                        description: contentTag ? contentTag.textContent : (descTag ? descTag.textContent : ""),
                         enclosure: enclosure ? { link: enclosure.getAttribute("url") } : null,
                         durationStr: durationStr
                     };
@@ -1782,9 +1792,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                 return { status: 'ok', feed: { title: channel.querySelector("title")?.textContent || "", image: feedImage }, items };
 
             } catch (proxyError) {
-                console.warn("Raw fetch failed, falling back to rss2json for stability.", proxyError);
+                console.warn("Cloudflare Worker fetch failed, falling back to rss2json for stability.", proxyError);
                 
-                // ATTEMPT 2: Fallback to stable rss2json (will miss duration, but won't crash)
+                // ATTEMPT 2: Fallback to stable rss2json
                 const fallbackRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(freshUrl)}`);
                 const fallbackData = await fallbackRes.json();
                 
@@ -1794,7 +1804,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                         pubDate: item.pubDate,
                         description: item.content || item.description || "",
                         enclosure: item.enclosure ? { link: item.enclosure.link } : null,
-                        durationStr: "" // Missing, but safe
+                        durationStr: "" // Missing, but the app survives
                     }));
                     return { status: 'ok', feed: { title: fallbackData.feed.title, image: fallbackData.feed.image }, items };
                 }
