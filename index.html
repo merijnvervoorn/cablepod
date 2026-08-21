@@ -987,9 +987,15 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                     const url = queue[i].audioUrl;
                     const match = await cache.match(url);
                     if (!match) {
-                        // mode: 'no-cors' bypasses security blocks from podcast servers
-                        const req = new Request(url, { mode: 'no-cors' }); 
-                        fetch(req).then(res => cache.put(req, res)).then(() => refreshCacheList());
+                        try {
+                            const res = await fetch(url);
+                            if (res.ok) {
+                                await cache.put(url, res);
+                                refreshCacheList();
+                            }
+                        } catch (err) {
+                            console.warn("Could not auto-cache (Network or CORS issue):", url);
+                        }
                     }
                 }
                 
@@ -1003,9 +1009,23 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             btn.innerHTML = `<span class="btn-icon">⏳</span> Caching...`;
             btn.disabled = true;
             
-            caches.open('cablepod-audio').then(cache => {
-                const req = new Request(ep.audioUrl, { mode: 'no-cors' });
-                fetch(req).then(res => cache.put(req, res)).then(() => refreshCacheList());
+            caches.open('cablepod-audio').then(async cache => {
+                try {
+                    const res = await fetch(ep.audioUrl);
+                    if (res.ok) {
+                        await cache.put(ep.audioUrl, res);
+                        refreshCacheList();
+                    } else {
+                        throw new Error("Network response not ok");
+                    }
+                } catch (err) {
+                    console.error("Manual cache failed:", err);
+                    btn.innerHTML = `<span class="btn-icon">✕</span> Failed`;
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.innerHTML = `<span class="btn-icon">⬇</span> Cache`;
+                    }, 3000); // Reset button after 3 seconds
+                }
             });
         }
 
