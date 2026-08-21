@@ -1400,15 +1400,31 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             btnPlay.innerHTML = pauseSVG; 
             fsBtnPlay.innerHTML = pauseSVG;
             updateCardPlayButtons();
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
         });
+        
         audioPlayer.addEventListener('pause', () => { 
             btnPlay.innerHTML = playSVG; 
             fsBtnPlay.innerHTML = playSVG;
             updateCardPlayButtons();
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
         });
 
-        const rewindAudio = () => { if(currentEpisode) audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - 10); };
-        const forwardAudio = () => { if(currentEpisode) audioPlayer.currentTime = Math.min(audioPlayer.duration || 0, audioPlayer.currentTime + 30); };
+        // Helper function to sync the lock screen progress bar
+        function updateLockScreenProgress() {
+            if ('mediaSession' in navigator && audioPlayer.duration > 0) {
+                try {
+                    navigator.mediaSession.setPositionState({
+                        duration: audioPlayer.duration,
+                        playbackRate: audioPlayer.playbackRate || 1,
+                        position: audioPlayer.currentTime
+                    });
+                } catch (e) { /* Ignore errors if metadata isn't fully ready */ }
+            }
+        }
+
+        const rewindAudio = () => { if(currentEpisode) audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - 10); updateLockScreenProgress()};
+        const forwardAudio = () => { if(currentEpisode) audioPlayer.currentTime = Math.min(audioPlayer.duration || 0, audioPlayer.currentTime + 30); updateLockScreenProgress()};
         
         btnRewind.onclick = rewindAudio;
         fsBtnRewind.onclick = rewindAudio;
@@ -1501,6 +1517,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             const totalStr = formatTime(audioPlayer.duration);
             timeTotal.innerText = totalStr;
             fsTimeTotal.innerText = totalStr;
+
+            updateLockScreenProgress();
         });
 
         audioPlayer.addEventListener('timeupdate', () => {
@@ -1547,6 +1565,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                     const mobileFill = document.getElementById('mobile-progress-fill');
                     if (mobileFill) mobileFill.style.width = pct + '%';
                 }
+                
+                updateLockScreenProgress();
+                
             } else {
                 seekBar.value = 0;
                 fsSeekBar.value = 0;
