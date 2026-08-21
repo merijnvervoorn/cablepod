@@ -1777,6 +1777,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                         }
                     }
 
+                    const guidTag = item.querySelector("guid");
                     const contentTag = item.getElementsByTagName("content:encoded")[0];
                     const descTag = item.querySelector("description");
 
@@ -1785,7 +1786,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                         pubDate: item.querySelector("pubDate")?.textContent || "",
                         description: contentTag ? contentTag.textContent : (descTag ? descTag.textContent : ""),
                         enclosure: enclosure ? { link: enclosure.getAttribute("url") } : null,
-                        durationStr: durationStr
+                        durationStr: durationStr,
+                        guid: guidTag ? guidTag.textContent : ""
                     };
                 });
 
@@ -1804,7 +1806,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                         pubDate: item.pubDate,
                         description: item.content || item.description || "",
                         enclosure: item.enclosure ? { link: item.enclosure.link } : null,
-                        durationStr: "" // Missing, but the app survives
+                        durationStr: "",
+                        guid: item.guid || ""
                     }));
                     return { status: 'ok', feed: { title: fallbackData.feed.title, image: fallbackData.feed.image }, items };
                 }
@@ -1831,8 +1834,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                         if (data.status === 'ok') {
                             data.items.slice(0, 5).forEach(item => {
                                 if (item.enclosure && item.enclosure.link) {
+                                    const rawUrlId = safeId(item.enclosure.link);
+                                    const primaryId = item.guid ? safeId(item.guid) : rawUrlId;
+
                                     const ep = {
-                                        id: safeId(item.enclosure.link),
+                                        id: primaryId,
                                         podcastId: sub.id, 
                                         podcastTitle: cleanText(sub.title), 
                                         epTitle: cleanText(item.title),
@@ -1840,16 +1846,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                                         image: sub.image || data.feed.image,
                                         pubDate: item.pubDate, 
                                         description: item.description || "",
-                                        durationStr: item.durationStr // Captures our new duration
+                                        durationStr: item.durationStr 
                                     };
                                     
-                                    if(!playedHistory.includes(ep.id)) {
+                                    // Check both the new GUID ID and the old URL ID
+                                    if(!playedHistory.includes(ep.id) && !playedHistory.includes(rawUrlId)) {
                                         window.epCache[ep.id] = ep;
                                         
-                                        const isQueued = queue.some(q => q.id === ep.id);
-                                        const isStarted = episodeProgress[ep.id] && episodeProgress[ep.id].currentTime > 1;
+                                        const isQueued = queue.some(q => q.id === ep.id || q.id === rawUrlId);
+                                        const isStarted = (episodeProgress[ep.id] && episodeProgress[ep.id].currentTime > 1) || 
+                                                          (episodeProgress[rawUrlId] && episodeProgress[rawUrlId].currentTime > 1);
                                         
-                                        // Do not show in inbox if it's already in the queue or has been started
                                         if(!isQueued && !isStarted) {
                                             inboxEpisodes.push(ep);
                                         }
@@ -2170,8 +2177,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                 
                 data.items.forEach(item => {
                     if(!item.enclosure || !item.enclosure.link) return;
+                    const rawUrlId = safeId(item.enclosure.link);
+                    const primaryId = item.guid ? safeId(item.guid) : rawUrlId;
+
                     const ep = { 
-                        id: safeId(item.enclosure.link),
+                        id: primaryId,
                         podcastId: podId, 
                         podcastTitle: title, 
                         epTitle: cleanText(item.title), 
@@ -2179,7 +2189,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                         image: image, 
                         pubDate: item.pubDate, 
                         description: item.description,
-                        durationStr: item.durationStr // Captures our new duration
+                        durationStr: item.durationStr 
                     };
                     window.epCache[ep.id] = ep;
                     html += createEpisodeCardHTML(ep.id, 0, 'sub');
