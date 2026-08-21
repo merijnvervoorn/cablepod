@@ -1588,13 +1588,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
 
             audioPlayer.src = ep.audioUrl;
             audioPlayer.playbackRate = currentSpeed; 
+            
+            // Build the lock screen UI now that the source is set
             updatePlayerUI(ep);
             
             const savedProgress = episodeProgress[ep.id]?.currentTime || ep.progress || 0;
             
-            audioPlayer.play().then(() => {
-                if(savedProgress > 0) audioPlayer.currentTime = savedProgress;
-            }).catch(e => console.error("Playback prevented:", e));
+            // Set the time BEFORE telling the browser to play
+            if (savedProgress > 0) {
+                audioPlayer.currentTime = savedProgress;
+            }
+            
+            audioPlayer.play().catch(e => console.error("Playback prevented:", e));
 
             if (!queue.find(q => q.id === ep.id)) {
                 queue.unshift(ep);
@@ -1650,13 +1655,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             // Show notes setup
             document.getElementById('fs-notes-content').innerHTML = ep.description || "No show notes available for this episode.";
 
-            // NEW: Send data to the mobile lock screen (with Android safe-guards)
+            // Send data to the mobile lock screen
             if ('mediaSession' in navigator) {
-                // Check if the image is a base64 SVG fallback. 
-                // Android lock screens will crash/hide if given an SVG.
                 let safeImage = ep.image;
-                if (!safeImage || safeImage.startsWith('data:image')) {
-                    safeImage = '/static/CablePod-logo.png'; // Use your standard app icon
+                if (!safeImage || safeImage.startsWith('data:image') || safeImage.startsWith('/')) {
+                    // Force an ABSOLUTE URL so the Android OS can actually download it
+                    safeImage = window.location.origin + '/static/CablePod-logo.png';
                 }
 
                 navigator.mediaSession.metadata = new MediaMetadata({
