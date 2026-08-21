@@ -948,6 +948,67 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
         };
         const safeId = (str) => btoa(encodeURIComponent(str)).replace(/=/g, '');
 
+        // --- Offline Audio Cache Manager ---
+        window.cachedAudioUrls = new Set();
+
+        // Register the Service Worker to handle offline playback
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(err => console.error("Service Worker failed:", err));
+        }
+
+        async function refreshCacheList() {
+            try {
+                const cache = await caches.open('cablepod-audio');
+                const requests = await cache.keys();
+                window.cachedAudioUrls = new Set(requests.map(req => req.url));
+                renderQueue(); // Update UI to show "✓ Cached" buttons
+            } catch (e) { console.error("Cache access denied", e); }
+        }
+
+        async function manageAudioCache() {
+            try {
+                const cache = await caches.open('cablepod-audio');
+                const keys = await cache.keys();
+                
+                // Valid URLs are anything currently in the queue, plus the active episode
+                const validUrls = queue.map(q => q.audioUrl);
+                if (currentEpisode) validUrls.push(currentEpisode.audioUrl);
+
+                // 1. PURGE: Delete any cached audio that is no longer in the queue
+                for (const req of keys) {
+                    if (!validUrls.includes(req.url)) {
+                        await cache.delete(req);
+                        console.log("Cleaned up removed episode from storage:", req.url);
+                    }
+                }
+
+                // 2. AUTO-CACHE: Ensure the Top 2 episodes are downloaded
+                for (let i = 0; i < Math.min(2, queue.length); i++) {
+                    const url = queue[i].audioUrl;
+                    const match = await cache.match(url);
+                    if (!match) {
+                        // mode: 'no-cors' bypasses security blocks from podcast servers
+                        const req = new Request(url, { mode: 'no-cors' }); 
+                        fetch(req).then(res => cache.put(req, res)).then(() => refreshCacheList());
+                    }
+                }
+                
+                await refreshCacheList();
+            } catch(e) { console.error("Cache manager failed", e); }
+        }
+
+        function manualCacheAudio(epId, btn) {
+            const ep = window.epCache[epId];
+            if (!ep) return;
+            btn.innerHTML = `<span class="btn-icon">⏳</span> Caching...`;
+            btn.disabled = true;
+            
+            caches.open('cablepod-audio').then(cache => {
+                const req = new Request(ep.audioUrl, { mode: 'no-cors' });
+                fetch(req).then(res => cache.put(req, res)).then(() => refreshCacheList());
+            });
+        }
+
         // --- State Management & Sync ---
         let subscriptions = JSON.parse(localStorage.getItem('subscriptions')) || [];
         let queue = JSON.parse(localStorage.getItem('queue')) || [];
@@ -956,7 +1017,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
         let currentEpisode = JSON.parse(localStorage.getItem('currentEpisode')) || null;
         let lightTheme = localStorage.getItem('lightTheme') === 'true';
 
-        // Secure passhrase loading
+        // Secure passphrase loading
         let syncPassphrase = localStorage.getItem('syncPassphrase');
         if (syncPassphrase === "null" || syncPassphrase === "undefined") syncPassphrase = null;
 
@@ -1201,7 +1262,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                     saveState(false); 
                     
                     document.getElementById('sync-status').innerText = `✓ Sync successful via ${provider}. Data updated.`;
-                    renderSubscriptions(); renderQueue(); fetchInboxData(); updatePlayerVisibility();
+                    renderSubscriptions(); renderQueue(); fetchInboxData(); updatePlayerVisibility(); manageAudioCache();
                 } else {
                     document.getElementById('sync-status').innerText = "✓ Already up to date.";
                 }
@@ -1483,6 +1544,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                     const mobileFill = document.getElementById('mobile-progress-fill');
                     if (mobileFill) mobileFill.style.width = pct + '%';
                     
+                    const cardFill = document.getElementById(`card-progress-fill-${currentEpisode.id}`);
+                    if (cardFill) cardFill.style.width = pct + '%';
+                    const cardText = document.getElementById(`card-progress-text-${currentEpisode.id}`);
+                    if (cardText) cardText.innerText = `${currStr} / ${formatTime(audioPlayer.duration)}`;
+                    
                     episodeProgress[currentEpisode.id] = {
                         currentTime: audioPlayer.currentTime,
                         duration: audioPlayer.duration
@@ -1626,12 +1692,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
         }
 
         function exportOPML() {
-            let opml = `<?xml version="1.0" encoding="utf-8"?>\n<opml version="1.0">\n<head><title>CablePod Subscriptions</title></head>\n<body>\n<outline text="feeds">\n`;
+            let opml = '<?xml version="1.0" encoding="utf-8"?>\n' +
+                       '<opml version="1.0">\n' +
+                       '<head><title>CablePod Subscriptions</title></head>\n' +
+                       '<body>\n' +
+                       '<outline text="feeds">\n';
             subscriptions.forEach(sub => {
                 const safeT = (sub.title || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                opml += `<outline type="rss" text="${safeT}" xmlUrl="${sub.feedUrl}" />\n`;
+                opml += '<outline type="rss" text="' + safeT + '" xmlUrl="' + sub.feedUrl + '" />\n';
             });
-            opml += `</outline>\n</body>\n</opml>`;
+            opml += '</outline>\n' +
+                    '</' + 'body>\n' +
+                    '</' + 'opml>';
             const a = document.createElement('a');
             a.href = URL.createObjectURL(new Blob([opml], {type: "text/xml"}));
             a.download = "cablepod_subscriptions.opml";
@@ -1663,6 +1735,73 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             reader.readAsText(file);
         }
 
+        
+        // --- Hybrid Fetcher: Tries Raw XML for Duration, Falls back to rss2json ---
+        async function fetchPodcastFeed(feedUrl) {
+            const freshUrl = feedUrl + (feedUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+            
+            try {
+                // ATTEMPT 1: Raw XML via a reliable proxy to get durations
+                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(freshUrl)}`;
+                const res = await fetch(proxyUrl);
+                if (!res.ok) throw new Error("Proxy failed");
+                
+                const text = await res.text();
+                const xml = new DOMParser().parseFromString(text, "text/xml");
+                if (xml.querySelector("parsererror")) throw new Error("XML Parse Error");
+
+                const channel = xml.querySelector("channel");
+                let feedImage = channel.querySelector("image > url")?.textContent || channel.getElementsByTagNameNS("*", "image")[0]?.getAttribute("href") || "";
+
+                const items = Array.from(xml.querySelectorAll("item")).map(item => {
+                    const enclosure = item.querySelector("enclosure");
+                    const durationTag = item.getElementsByTagNameNS("*", "duration")[0];
+                    let durationStr = durationTag ? durationTag.textContent : "";
+                    
+                    if (durationStr && !durationStr.includes(':')) {
+                        const secs = parseInt(durationStr, 10);
+                        if (!isNaN(secs)) {
+                            const h = Math.floor(secs / 3600);
+                            const m = Math.floor((secs % 3600) / 60);
+                            const s = Math.floor(secs % 60);
+                            durationStr = h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}` : `${m}:${s.toString().padStart(2, '0')}`;
+                        }
+                    }
+
+                    const descTag = item.getElementsByTagNameNS("*", "encoded")[0] || item.querySelector("description");
+
+                    return {
+                        title: item.querySelector("title")?.textContent || "Unknown Episode",
+                        pubDate: item.querySelector("pubDate")?.textContent || "",
+                        description: descTag ? descTag.textContent : "",
+                        enclosure: enclosure ? { link: enclosure.getAttribute("url") } : null,
+                        durationStr: durationStr
+                    };
+                });
+
+                return { status: 'ok', feed: { title: channel.querySelector("title")?.textContent || "", image: feedImage }, items };
+
+            } catch (proxyError) {
+                console.warn("Raw fetch failed, falling back to rss2json for stability.", proxyError);
+                
+                // ATTEMPT 2: Fallback to stable rss2json (will miss duration, but won't crash)
+                const fallbackRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(freshUrl)}`);
+                const fallbackData = await fallbackRes.json();
+                
+                if (fallbackData.status === 'ok') {
+                    const items = fallbackData.items.map(item => ({
+                        title: cleanText(item.title),
+                        pubDate: item.pubDate,
+                        description: item.content || item.description || "",
+                        enclosure: item.enclosure ? { link: item.enclosure.link } : null,
+                        durationStr: "" // Missing, but safe
+                    }));
+                    return { status: 'ok', feed: { title: fallbackData.feed.title, image: fallbackData.feed.image }, items };
+                }
+                return { status: 'error' };
+            }
+        }
+
         // --- Fetch & Render Logic ---
         async function fetchInboxData() {
             if (subscriptions.length === 0) {
@@ -1678,20 +1817,20 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             try {
                 await Promise.all(subscriptions.map(async (sub) => {
                     try {
-                        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(sub.feedUrl)}`);
-                        const data = await res.json();
+                        const data = await fetchPodcastFeed(sub.feedUrl);
                         if (data.status === 'ok') {
                             data.items.slice(0, 5).forEach(item => {
                                 if (item.enclosure && item.enclosure.link) {
                                     const ep = {
                                         id: safeId(item.enclosure.link),
-                                        podcastId: sub.id, // Store origin ID
+                                        podcastId: sub.id, 
                                         podcastTitle: cleanText(sub.title), 
                                         epTitle: cleanText(item.title),
                                         audioUrl: item.enclosure.link, 
                                         image: sub.image || data.feed.image,
                                         pubDate: item.pubDate, 
-                                        description: item.content || item.description || ""
+                                        description: item.description || "",
+                                        durationStr: item.durationStr // Captures our new duration
                                     };
                                     
                                     if(!playedHistory.includes(ep.id)) {
@@ -1708,7 +1847,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                                 }
                             });
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.warn(`Failed to process feed for ${sub.title}`, e);
+                    }
                 }));
 
                 inboxEpisodes.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
@@ -1717,7 +1858,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             } catch (err) { 
                 document.getElementById('home-inbox').innerHTML = `<p style='color:red;'>Failed to load inbox.</p>`; 
             }
-        }
+                }
 
         function renderHome() {
             const homeQueue = document.getElementById('home-queue');
@@ -1795,7 +1936,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             const ep = window.epCache[epId];
             if(!ep) return "";
 
-            const dateStr = ep.pubDate ? new Date(ep.pubDate).toLocaleDateString() : '';
+            let dateStr = '';
+            if (ep.pubDate) {
+                const d = new Date(ep.pubDate);
+                dateStr = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+            }
+            
+            // Add duration to the metadata line if we have it
+            let metaText = `<span style="font-size: 1.1em; vertical-align: middle; margin-right: 4px;">📻</span> ${dateStr} • ${ep.podcastTitle}`;
+            if (ep.durationStr) {
+                metaText += ` • ⏱ ${ep.durationStr}`;
+            }
             
             // Check if currently playing to show correct icon
             const isPlaying = currentEpisode && currentEpisode.id === epId && !audioPlayer.paused;
@@ -1806,24 +1957,37 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             
             if (context === 'queue') {
                 buttons += `<button class="secondary" onclick="event.stopPropagation(); removeFromQueue(${index})"><span class="btn-icon">✕</span> Remove</button>`;
+                
+                if (window.cachedAudioUrls && window.cachedAudioUrls.has(ep.audioUrl)) {
+                    buttons += `<button class="secondary" disabled><span class="btn-icon">✓</span> Cached</button>`;
+                } else {
+                    buttons += `<button class="secondary" onclick="event.stopPropagation(); manualCacheAudio('${ep.id}', this)"><span class="btn-icon">⬇</span> Cache</button>`;
+                }
             } else {
                 buttons += `<button class="secondary" onclick="event.stopPropagation(); addToQueue('${ep.id}', this)"><span class="btn-icon">+</span> Queue</button>`;
             }
-            buttons += `<button class="secondary" onclick="event.stopPropagation(); markAsPlayedCard('${ep.id}', this)"><span class="btn-icon">✓</span> Played</button>`;
 
+            // Only show progress text and bar IF the episode has actually been started
             let progressHTML = '';
-            if (episodeProgress[ep.id]) { 
-                const pct = (episodeProgress[ep.id].currentTime / episodeProgress[ep.id].duration) * 100;
-                if (pct > 0 && pct < 100) {
-                    progressHTML = `<div class="progress-bg"><div class="progress-fill" style="width: ${pct}%"></div></div>`;
-                }
+            const current = episodeProgress[ep.id] ? episodeProgress[ep.id].currentTime : 0;
+            const total = (episodeProgress[ep.id] && episodeProgress[ep.id].duration) ? episodeProgress[ep.id].duration : 0;
+            
+            if (current > 0) {
+                const displayTotal = total > 0 ? formatTime(total) : (ep.durationStr || "0:00");
+                const pct = total > 0 ? (current / total) * 100 : 0;
+                
+                progressHTML = `
+                <div id="card-progress-text-${ep.id}" style="font-size: 11px; color: var(--text-secondary); margin-bottom: 2px;">
+                    <span style="color: var(--primary-color);">${formatTime(current)} / ${displayTotal}</span>
+                </div>
+                <div class="progress-bg"><div id="card-progress-fill-${ep.id}" class="progress-fill" style="width: ${pct}%"></div></div>`;
             }
 
             return `
             <div class="card" onclick="openEpisodeDetail('${ep.id}')">
                 <img src="${ep.image || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzU1NSIvPjwvc3ZnPg=='}" alt="Art">
                 <div class="card-content">
-                    <div class="card-meta"><span style="font-size: 1.1em; vertical-align: middle; margin-right: 4px;">📻</span> ${dateStr} • ${ep.podcastTitle}</div>
+                    <div class="card-meta">${metaText}</div>
                     <div class="card-title">${ep.epTitle}</div>
                     ${progressHTML}
                     <div class="card-actions">${buttons}</div>
@@ -1842,6 +2006,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                 inboxEpisodes = inboxEpisodes.filter(q => q.id !== epId); 
                 
                 saveState();
+                manageAudioCache();
                 if(btnElement) { btnElement.innerText = "✓ Added"; btnElement.disabled = true; }
                 
                 renderQueue(); 
@@ -1853,6 +2018,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
         function removeFromQueue(index) {
             queue.splice(index, 1);
             saveState();
+            manageAudioCache();
             renderQueue(); renderHome();
             updatePlayerVisibility();
         }
@@ -1863,6 +2029,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                 queue = queue.filter(q => q.id !== epId);
                 inboxEpisodes = inboxEpisodes.filter(q => q.id !== epId);
                 saveState();
+                manageAudioCache();
                 
                 if(btnElement) {
                     btnElement.innerText = "Played";
@@ -1889,7 +2056,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
 
             document.getElementById('ep-detail-podcast-title').innerText = ep.podcastTitle;
             document.getElementById('ep-detail-title').innerText = ep.epTitle;
-            document.getElementById('ep-detail-meta').innerText = ep.pubDate ? new Date(ep.pubDate).toLocaleDateString() : '';
+            
+            let detailDateStr = '';
+            if (ep.pubDate) {
+                const d = new Date(ep.pubDate);
+                detailDateStr = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+            }
+            document.getElementById('ep-detail-meta').innerText = detailDateStr;
+            
             document.getElementById('ep-detail-img').src = ep.image;
             document.getElementById('ep-detail-desc').innerHTML = ep.description;
 
@@ -1958,8 +2132,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             container.innerHTML = "<p>Loading podcast feed...</p>";
 
             try {
-                const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(cachedPod.feedUrl)}`);
-                const data = await response.json();
+                const data = await fetchPodcastFeed(cachedPod.feedUrl);
                 if (data.status !== 'ok') throw new Error("Failed to parse feed.");
 
                 const title = cleanText(data.feed.title || cachedPod.title);
@@ -1990,7 +2163,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                         audioUrl: item.enclosure.link, 
                         image: image, 
                         pubDate: item.pubDate, 
-                        description: item.content || item.description 
+                        description: item.description,
+                        durationStr: item.durationStr // Captures our new duration
                     };
                     window.epCache[ep.id] = ep;
                     html += createEpisodeCardHTML(ep.id, 0, 'sub');
@@ -2069,6 +2243,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             } else {
                 fetchInboxData();
             }
+
+            manageAudioCache();
         };
     </script>
 </body>
