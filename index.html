@@ -1628,6 +1628,19 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             
             // Show notes setup
             document.getElementById('fs-notes-content').innerHTML = ep.description || "No show notes available for this episode.";
+
+            // NEW: Send data to the mobile lock screen
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: ep.epTitle,
+                    artist: ep.podcastTitle,
+                    album: 'CablePod',
+                    artwork: [
+                        { src: ep.image, sizes: '512x512', type: 'image/jpeg' },
+                        { src: ep.image, sizes: '256x256', type: 'image/jpeg' }
+                    ]
+                });
+            }
         }
 
         // --- Database & OPML Import/Export ---
@@ -2178,6 +2191,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
 
         // Initialize App
         window.onload = () => {
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.setActionHandler('play', () => audioPlayer.play());
+                navigator.mediaSession.setActionHandler('pause', () => audioPlayer.pause());
+                navigator.mediaSession.setActionHandler('seekbackward', () => rewindAudio());
+                navigator.mediaSession.setActionHandler('seekforward', () => forwardAudio());
+                navigator.mediaSession.setActionHandler('nexttrack', () => playNextEpisode());
+            }
+
             if (subscriptions.length > 0) {
                 subscriptions = subscriptions.map(sub => ({
                     ...sub,
