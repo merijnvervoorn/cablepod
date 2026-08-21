@@ -948,87 +948,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
         };
         const safeId = (str) => btoa(encodeURIComponent(str)).replace(/=/g, '');
 
-        // --- Offline Audio Cache Manager ---
-        window.cachedAudioUrls = new Set();
-
-        // Register the Service Worker to handle offline playback
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js').catch(err => console.error("Service Worker failed:", err));
-        }
-
-        async function refreshCacheList() {
-            try {
-                const cache = await caches.open('cablepod-audio');
-                const requests = await cache.keys();
-                window.cachedAudioUrls = new Set(requests.map(req => req.url));
-                renderQueue(); // Update UI to show "✓ Cached" buttons
-            } catch (e) { console.error("Cache access denied", e); }
-        }
-
-        async function manageAudioCache() {
-            try {
-                const cache = await caches.open('cablepod-audio');
-                const keys = await cache.keys();
-                
-                // Valid URLs are anything currently in the queue, plus the active episode
-                const validUrls = queue.map(q => q.audioUrl);
-                if (currentEpisode) validUrls.push(currentEpisode.audioUrl);
-
-                // 1. PURGE: Delete any cached audio that is no longer in the queue
-                for (const req of keys) {
-                    if (!validUrls.includes(req.url)) {
-                        await cache.delete(req);
-                        console.log("Cleaned up removed episode from storage:", req.url);
-                    }
-                }
-
-                // 2. AUTO-CACHE: Ensure the Top 2 episodes are downloaded
-                for (let i = 0; i < Math.min(2, queue.length); i++) {
-                    const url = queue[i].audioUrl;
-                    const match = await cache.match(url);
-                    if (!match) {
-                        try {
-                            const res = await fetch(url);
-                            if (res.ok) {
-                                await cache.put(url, res);
-                                refreshCacheList();
-                            }
-                        } catch (err) {
-                            console.warn("Could not auto-cache (Network or CORS issue):", url);
-                        }
-                    }
-                }
-                
-                await refreshCacheList();
-            } catch(e) { console.error("Cache manager failed", e); }
-        }
-
-        function manualCacheAudio(epId, btn) {
-            const ep = window.epCache[epId];
-            if (!ep) return;
-            btn.innerHTML = `<span class="btn-icon">⏳</span> Caching...`;
-            btn.disabled = true;
-            
-            caches.open('cablepod-audio').then(async cache => {
-                try {
-                    const res = await fetch(ep.audioUrl);
-                    if (res.ok) {
-                        await cache.put(ep.audioUrl, res);
-                        refreshCacheList();
-                    } else {
-                        throw new Error("Network response not ok");
-                    }
-                } catch (err) {
-                    console.error("Manual cache failed:", err);
-                    btn.innerHTML = `<span class="btn-icon">✕</span> Failed`;
-                    setTimeout(() => {
-                        btn.disabled = false;
-                        btn.innerHTML = `<span class="btn-icon">⬇</span> Cache`;
-                    }, 3000); // Reset button after 3 seconds
-                }
-            });
-        }
-
         // --- State Management & Sync ---
         let subscriptions = JSON.parse(localStorage.getItem('subscriptions')) || [];
         let queue = JSON.parse(localStorage.getItem('queue')) || [];
@@ -1282,7 +1201,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                     saveState(false); 
                     
                     document.getElementById('sync-status').innerText = `✓ Sync successful via ${provider}. Data updated.`;
-                    renderSubscriptions(); renderQueue(); fetchInboxData(); updatePlayerVisibility(); manageAudioCache();
+                    renderSubscriptions(); renderQueue(); fetchInboxData(); updatePlayerVisibility();
                 } else {
                     document.getElementById('sync-status').innerText = "✓ Already up to date.";
                 }
@@ -1995,13 +1914,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             // Queue vs Non-Queue Actions
             if (context === 'queue') {
                 buttons += `<button class="secondary" onclick="event.stopPropagation(); removeFromQueue(${index})"><span class="btn-icon">✕</span> Remove</button>`;
-                
-                // Offline Cache Button (Queue only)
-                if (window.cachedAudioUrls && window.cachedAudioUrls.has(ep.audioUrl)) {
-                    buttons += `<button class="secondary" disabled><span class="btn-icon">✓</span> Cached</button>`;
-                } else {
-                    buttons += `<button class="secondary" onclick="event.stopPropagation(); manualCacheAudio('${ep.id}', this)"><span class="btn-icon">⬇</span> Cache</button>`;
-                }
             } else {
                 buttons += `<button class="secondary" onclick="event.stopPropagation(); addToQueue('${ep.id}', this)"><span class="btn-icon">+</span> Queue</button>`;
             }
@@ -2048,7 +1960,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                 inboxEpisodes = inboxEpisodes.filter(q => q.id !== epId); 
                 
                 saveState();
-                manageAudioCache();
                 if(btnElement) { btnElement.innerText = "✓ Added"; btnElement.disabled = true; }
                 
                 renderQueue(); 
@@ -2060,7 +1971,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
         function removeFromQueue(index) {
             queue.splice(index, 1);
             saveState();
-            manageAudioCache();
             renderQueue(); renderHome();
             updatePlayerVisibility();
         }
@@ -2071,7 +1981,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
                 queue = queue.filter(q => q.id !== epId);
                 inboxEpisodes = inboxEpisodes.filter(q => q.id !== epId);
                 saveState();
-                manageAudioCache();
                 
                 if(btnElement) {
                     btnElement.innerText = "Played";
@@ -2288,8 +2197,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. -->
             } else {
                 fetchInboxData();
             }
-
-            manageAudioCache();
         };
     </script>
 </body>
